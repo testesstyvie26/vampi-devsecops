@@ -1,0 +1,60 @@
+name: DevSecOps Security Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  security-scan-sast-sca:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Semgrep SAST
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: auto
+
+      - name: Run Snyk Test (CLI, show vulnerabilities)
+        uses: snyk/actions/python@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          json: false
+        continue-on-error: true
+
+      - name: Run Snyk Monitor (Dashboard)
+        uses: snyk/actions/python@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: monitor
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Install docker-compose
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.25.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+          docker-compose version
+
+      - name: Start services
+        run: docker-compose up -d
+
+  zap_scan:
+    name: Run DAST scan on the web application
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/zaproxy/zaproxy:stable
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+     - name: Run ZAP Baseline Scan
+  run: |
+    docker run --rm -v ${{ github.workspace }}:/zap/wrk ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://localhost:3000 -r /zap/wrk/zap_report.html
